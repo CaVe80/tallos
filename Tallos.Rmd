@@ -1,0 +1,266 @@
+---
+title: "Aquac"
+author: "Camilo Vega"
+date: "5 de julio de 2018"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+  word_document: default
+  css: view.css
+---
+
+Cargando los paquetes nececesarios
+
+```{r message=FALSE}
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+```
+
+Primero se organizaron los datos de tal forma que cada planta medida fuera una observacion, los tratamiento se nombraron con A para acuaponico y S para suelo, y se creo la varibale trat_rep como identificador de la repeticion de cada tratamiento, por ultimo las varibles Planta y rep se colocaron como variables categoricas. 
+
+Los datos quedaron entonces asi
+
+```{r rows.print=12}
+load("datos_tallos.RData")
+datos_tallos
+```
+
+Ahora miramos los histogramas del numero de tallos y el largo de los tallos, por tratamiento
+para mirar posibles diferencias
+
+```{r}
+ggplot(datos_tallos, aes(n_tallos, fill = trat)) +
+  geom_histogram(bins = 10, alpha = 0.5) +
+  labs(title = "Histograma numero de tallos", x = "Numero de Tallos", y = "Conteo", fill ="Tratamiento")
+
+ggplot(datos_tallos, aes(long_tallo_p, fill = trat)) +
+  geom_histogram(bins = 10, alpha = 0.5) +
+  labs(title = "Histograma Largo tallo principal", x = "Largo tallo principal", y = "Conteo", fill ="Tratamiento")
+```
+
+La distribucion de los datos se asemeja a una distribucion de Poisson, lo cual va en concordancia con conteo de datos, asi como con datos observados en el tiempo.
+
+De igual forma se ve que tanto el numero de tallos como el largo del tallo principal muestran una diferencia para el tratamiento acuaponico respecto al de suelo.
+
+----------------------------------------
+
+Ahora miraremos la relacion del numero de tallos y largo del tallo principal en el tiempo
+deacuerdo al tratamiento
+
+```{r}
+ggplot(datos_tallos, aes(jitter(Sem), n_tallos, col = trat)) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(se = F, method = "loess") +
+  labs(title = "Numero de tallos por semana", x = "Semana", y = "Numero de Tallos", col = "Tratamiento")
+
+ggplot(datos_tallos, aes(jitter(Sem), long_tallo_p, col = trat)) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(se = F, method = "loess") +
+  labs(title = "Largo tallo principal por semana", x = "Semana", y = "Largo tallo principal", col = "Tratamiento")
+```
+
+Vemos el comportamiento esperado en las graficas donde el numero de tallos y largo del tallo principal crecen exponencialmente en el tiempo.
+
+Igualmete vemos para las dos graficas diferencias entre los resultados de los tratamientos
+
+----------------------------
+
+Ahora crearemos una tabla los promedios semanales por tratamiento
+
+```{r rows.print=12}
+datos_tallos %>% 
+      group_by(Sem,trat) %>%             #agrupamos por semana y tratmiento
+      summarise(Promedio_tallos = mean(n_tallos), Promedio_largo_tallo_principal = mean(long_tallo_p))
+```
+
+Como se ve en la tabla el promedio semana de la cantidad de tallos y el largo del tallo principal es mas alto para los tratamientos acuaponicos respecto a los de suelo
+
+----------------------------------------------
+
+Como vemos de la estadistica decriptiva los tallos cultivados en el sistema acuaponico presentan caracteristicas diferentes a los cultivados en suelo, asi que acontunuacion aplicaremos metodos estadisticos para determinar si estas diferencias son significativas
+
+primero miraremos el numero de tallos:
+
+Como se vio en la grafica de Numero de tallos por semana el numero de tallos crece exponencialmente a lo largo del tiempo razon por la cual transformalremos los datos 
+de numero de tallos aplicandole raiz cuadrada con el fin de su relacion con  la semana se asemeje mas a una linea.
+
+luego crearemos un modelo lineal de la raiz del numero de tallos en funcion de la semana, el tratamiento y la relacion entre semana-tratamiento
+
+```{r}
+raiz_n_tallos = sqrt(datos_tallos$n_tallos) #transformacion de datos
+
+modelo_n_tallos = lm(raiz_n_tallos~Sem*trat, data = datos_tallos) #creacion del modelo
+
+summary(modelo_n_tallos) #resumen del modelo
+
+par(mfrow = c(2,2))
+plot(modelo_n_tallos)
+
+```
+
+Todos se ve vien a esepcion de uno 3 valoes extremos, en las filas 150,158 y 162, pero en general se ve que el modelo se acomoda a los supuestos de la regresion
+
+ahora miraremos la anova para ver la significancia de las variables respecto a la raiz del numero de tallos
+
+```{r}
+anova(modelo_n_tallos)
+```
+
+Como se ve hay una diferencia SIGNIFICATIVA en la raiz del numero de tallos por semana, por tratamiento y en la relacion entre semana y tratamiento.
+
+Ahora miraremos el modelo graficamente para saber en que consisten estas diferencias significativas
+
+```{r}
+ggplot(datos_tallos, aes(jitter(Sem), raiz_n_tallos, col = trat)) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(se = F, method = "lm") +
+  labs(title = "Raiz Numero de tallos por semana", x = "Semana", y = "Raiz Numero de Tallos", col = "Tratamiento") +
+  scale_color_manual(labels = c("Regresion Acuaponico", "Regresion Suelo"), values = c("blue", "red"))
+```
+
+Como se ve a medida que pasa el tiempo la raiz de la cantidad de tallos aumenta en mayor proporcion (mayor pendiente) en el tratamiento Acuaponico respecto al tratamiento en suelo
+
+ahora veamos en la tabla esta diferencia
+
+```{r}
+Diferencia_cantidad_tallos <- datos_tallos %>% 
+      group_by(Sem,trat) %>%             #agrupamos por semana y tratmiento
+      summarise(Promedio_tallos = mean(n_tallos)) %>% 
+      spread(trat,Promedio_tallos) %>% 
+      summarise(Diferencia_promedio_numero_tallos_acua_suelo = A - S)
+Diferencia_cantidad_tallos
+```
+
+ahora miremos esta diferencia graficamente
+
+```{r}
+ggplot(datos_tallos, aes(as.factor(Sem), n_tallos, fill = trat)) +
+  geom_bar(stat="identity", position = "dodge") +
+  labs(title = "Largo tallo principal \n (Acuaponico - Suelo)", x = "Semana", y = "Largo promedio tallo principal")+
+   scale_fill_manual(name ="Tratamiento",labels = c("Acuaponico", "Suelo"), values = c("lightseagreen", "lightgoldenrod4"))
+```
+
+
+Se ve entonces que a medida que va pasando el tiempo la diferencia promedio entre numero de tallos de acuaponicos respecto a suelo va aumentando 
+---------------------------------------------------------------
+
+Ahora repetiremos el proceso con el largo de tallo principal:
+
+Al igul que el  numero de tallos el largo de tallo principal crece exponencialmente a lo largo del tiempo razon por la cual transformalremos los datos aplicando raiz cuadrada con el fin de su relacion con  la semana se asemeje mas a una linea.
+
+luego crearemos un modelo lineal de la raiz del largo del tallo principal en funcion de la semana, el tratamiento y la relacion entre semana-tratamiento
+
+```{r}
+raiz_long_tallo_p = sqrt(datos_tallos$long_tallo_p) #transformacion de datos
+
+modelo_long_tallo_p = lm(sqrt(long_tallo_p)~Sem*trat, data = datos_tallos) #creacion del modelo
+
+summary(modelo_long_tallo_p) #resumen del modelo
+
+par(mfrow = c(2,2))
+plot(modelo_long_tallo_p)
+```
+
+El modelo no se ajusta muy bien al principio de normalidad de los residuales en especial en parte derecha de la grafica
+
+intentaremos cambiando a una transformacion logaritmica
+
+```{r}
+log_long_tallo_p = log(datos_tallos$long_tallo_p) #transformacion de datos
+
+modelo_long_tallo_p = lm(log_long_tallo_p~Sem*trat, data = datos_tallos) #creacion del modelo
+
+summary(modelo_long_tallo_p) #resumen del modelo
+
+par(mfrow = c(2,2))
+plot(modelo_long_tallo_p)
+```
+
+Mejora con este modelo a pesar de tener algunos valores extremos en las observaciones 75,76 y 132
+
+ahora miraremos la anova para ver la significancia de las variables respecto al  logaritmo del largo del tallo principal
+
+```{r}
+anova(modelo_long_tallo_p)
+```
+
+Vemos que hay una diferencia significativa en el logaritmo del largo del tallo principal respecto a la semana y el tratamiento, pero no la hay en la relacion semana-tratemiento.
+
+miraremos si podemos sacar esta relacion semana-tratamiento del modelo
+
+```{r}
+modelo_long_tallo_p2 = lm(log_long_tallo_p~Sem+trat, data = datos_tallos)
+anova(modelo_long_tallo_p, modelo_long_tallo_p2)
+```
+
+Como vemos los modelos no son significativamente distintos por lo cual podemos sacar la relacion semana-tratamiento del modelo
+
+Ahora evaluaremos el nuevo modelo y miraremos la anova del nuevo modelo para determinar si hay dieferencias significativas entre el logaritmo del largo del tallo principal en funcion de la semana y el tratamiento
+
+```{r}
+summary(modelo_long_tallo_p2) #resumen del modelo
+
+par(mfrow = c(2,2))
+plot(modelo_long_tallo_p2)
+
+anova(modelo_long_tallo_p2)
+```
+
+El modelo sigue siendo valido, y seguimos viendo que hay diferencias SIGNIFICATIVAS entre el logaritmo del lago del tallo principal por semana y por tratamiento
+
+a contunuacnion veremos graficamente en que consiten esas diferencias
+
+```{r}
+ggplot(datos_tallos, aes(jitter(Sem), log_long_tallo_p, col = trat)) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(se = F, method = "lm") +
+  labs(title = "Logaritmo largo tallo principal por semana", x = "Semana", y = "Logaritmo largo tallo principal", col = "Tratamiento") +
+  scale_color_manual(labels = c("Regresion Acuaponico", "Regresion Suelo"), values = c("blue", "red"))
+```
+
+Como se ve el logaritmo del largo del tallo principal es mayor en el tratamiento Acuaponico respecto al tratamiento en suelo sin embargo esta diferencia no varia mucho en el transcurso de las semanas (se mantiene casi paralela).
+
+
+ahora veamos en la tabla esta diferencia
+
+```{r}
+Diferencia_largo_tallo_principal <- datos_tallos %>% 
+      group_by(Sem,trat) %>%             #agrupamos por semana y tratmiento
+      summarise(Promedio_largo_tallo_p = mean(long_tallo_p)) %>% 
+      spread(trat,Promedio_largo_tallo_p) %>% 
+      summarise(Diferencia_promedio_largo_tallo_p_acua_suelo = A - S)
+Diferencia_largo_tallo_principal
+```
+
+ahora veamolo graficamente 
+
+```{r}
+ggplot(datos_tallos, aes(as.factor(Sem), long_tallo_p, fill = trat)) +
+  geom_bar(stat="identity", position = "dodge") +
+  labs(title = "Largo tallo principal \n (Acuaponico - Suelo)", x = "Semana", y = "Largo promedio tallo principal")+
+   scale_fill_manual(name ="Tratamiento",labels = c("Acuaponico", "Suelo"), values = c("lightseagreen", "lightgoldenrod4"))
+```
+
+```{r}
+ggplot(Diferencia_cantidad_tallos, aes(Sem, Diferencia_promedio_numero_tallos_acua_suelo)) +
+  geom_line(col = "blue", lwd = 2) +
+  labs(title = "Diferencia promedio entre numero de tallos \n (Acuaponico - Suelo)", x = "Semana", y = "Numero promedio de Tallos")
+```
+
+
+
+Como se ve la diferencia aumenta fuertemente en las primeras semanas pero va decayendo luego de la semana 5
+NOTA : Yo no se mucho de esto, pero esto puede ser devido a la biologia de la planta, osea por mas que el acuaponico sea mejor
+  el tamaño de la panta tiene un limite biologico por eso puede ser que en las ultimas semanas sea cada vez menos la diferencia   entre el tamaño del acuaponico y el de suelo
+
+----------------------------------------------------------------
+
+En conclusion vemo que el tratamiento de acuaponicos tiene una diferencia SIGNIFICATIVA respecto al atratamiento en suelo en lo referente al numero de tallos y largo del tallo principal.
+
+En el tratamiento acuaponico el incremento por semana de la cantidad de tallos tiene una mayor proporcion que en el de suelo.
+
+Asi mismo el tallo principal en el tratamiento acuaponico tiende a ser mas grande en las primeras semanas y luego se van acercando en tamalo con respecto al de suelo (**desde mi punto de vista esto puede tener una explicacion biologica ya que apesar de que cresta rapido en las primeras semanas en las ultimas se ve que no puede exeder el promedio de su especie)
+
+- This document was made using [<img src="https://www.r-project.org/Rlogo.png" width="75">](https://www.r-project.org/ "R"), [<img src="https://www.rstudio.com/wp-content/uploads/2016/09/RStudio-Logo-Blue-Gray-125.png" width="150">](https://www.rstudio.com/ "RStudio"), [<img src="https://www.rstudio.com/wp-content/uploads/2017/05/rmarkdown.png" width="75">](https://rmarkdown.rstudio.com/ "Rmarkdown"), [<img src="https://www.rstudio.com/wp-content/uploads/2014/04/knitr.png" width="75">](https://yihui.name/knitr/ "Knitr"), [<img src="https://plot.ly/static/img/logos/plotly-logomark.svg" width="150">](https://plot.ly/d3-js-for-r-and-shiny-charts/ "Plotly")and [<img src="http://pyviz.org/tutorial/assets/bokeh.png" width="75">](http://hafen.github.io/rbokeh/ "rbokeh")
